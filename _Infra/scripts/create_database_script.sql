@@ -188,21 +188,20 @@ values
 	(1, 'ДМК'),
 	(2, 'ВР');
 
-insert into public.measurement_params (measurement_type_id, measurement_batch_id, height, temperature, pressure, wind_speed, wind_direction, bullet_speed)
+insert into public.users (username, rank_id)
 values
-	(2, 1, 100, 14, 720, 14, 25, 10),
-	(1, 2, 100, 14, 720, 14, 25, 10);
-
+	('alena', 1),
+	('nikita', 13);
 
 insert into public.measurement_batch (start_period, user_id)
 values
 	('2025-01-31 11:24', 1),
 	('2025-01-31 11:26', 2);
 
-insert into public.users (username, rank_id)
+insert into public.measurement_params (measurement_type_id, measurement_batch_id, height, temperature, pressure, wind_speed, wind_direction, bullet_speed)
 values
-	('alena', 1),
-	('nikita', 13);
+	(2, 1, 100, 14, 720, 14, 25, 10),
+	(1, 2, 100, 14, 720, 14, 25, 10);
 
 -- select * from public.users;
 -- select * from public.ranks;
