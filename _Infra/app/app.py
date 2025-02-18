@@ -52,12 +52,11 @@ def perform_calculation():
     if not conn:
         return
 
-    temperature_data = get_temperature_data(conn)
-
     start_time = time.time()
 
     results = []
     for temp in np.arange(0, 40.01, 0.01):
+        temperature_data = get_temperature_data(conn)
         delta_t = calculate_interpolation(temp, temperature_data)
         results.append((temp, delta_t))
 
