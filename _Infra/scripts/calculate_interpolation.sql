@@ -1,9 +1,13 @@
-DO $$
+CREATE FUNCTION "CalculateInterpolation"(
+    input_temp numeric(8,2)
+)
+    RETURNS numeric
+    LANGUAGE 'plpgsql'
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
 DECLARE
-    input_temp numeric(8,2) := 7.5;
-    temp_interpolation interpolation;
+    temp_interpolation interpolation_type;
     delta numeric(8,2);
-
 BEGIN
     -- Находим ближайшие точки для интерполяции
     SELECT 
@@ -16,14 +20,14 @@ BEGIN
     (
         SELECT delta_t, temperature FROM temperature_correction
         WHERE temperature >= input_temp
-        ORDER BY id
+        ORDER BY temperature
         LIMIT 1
     ) AS t1
     LEFT JOIN 
     (
         SELECT delta_t, temperature FROM temperature_correction
         WHERE temperature <= input_temp
-        ORDER BY id DESC
+        ORDER BY temperature DESC
         LIMIT 1
     ) AS t2
     ON true;
@@ -42,6 +46,7 @@ BEGIN
                 (temp_interpolation.temp_high - temp_interpolation.temp_low);
     END IF;
 
-    RAISE NOTICE 'Поправка для температуры %: %', input_temp, delta;
+    RETURN delta;
 
-END $$;
+END;
+$BODY$;
