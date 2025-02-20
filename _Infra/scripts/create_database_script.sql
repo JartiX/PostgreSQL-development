@@ -1,5 +1,10 @@
 DO $$
 BEGIN
+
+/*
+ 1. Удаляем старые элементы
+ ======================================
+ */
 RAISE NOTICE 'Запускаем создание новой структуры базы данных'; 
 
 BEGIN
@@ -48,8 +53,11 @@ BEGIN
 END;
 raise notice 'Удаление старых данных выполнено успешно';
 
--- Добавление структур данных
-BEGIN
+/*
+ 2. Добавляем структуры данных 
+ ================================================
+ */
+ BEGIN
 	-- Справочник должностей
 	CREATE TABLE military_ranks
 	(
@@ -179,16 +187,19 @@ END;
 
 raise notice 'Создание общих справочников и наполнение выполнено успешно'; 
 
--- Подготовка рассчетных структур
-BEGIN
+/*
+ 3. Подготовка расчетных структур
+ ==========================================
+ */
+ BEGIN
 	-- Таблица корректировки температуры
 	CREATE TABLE temperature_correction
 	(
 		temperature numeric(8,2) PRIMARY KEY,
-		delta_t numeric(8,2)
+		correction numeric(8,2)
 	);
 
-	INSERT INTO public.temperature_correction(temperature, delta_t)
+	INSERT INTO public.temperature_correction(temperature, correction)
 	VALUES
 		(0, 0.5),
 		(5, 0.5),
@@ -234,7 +245,8 @@ BEGIN
 		temperature numeric(8,2),
 		pressure numeric(8,2),
 		wind_direction numeric(8,2),
-		wind_speed numeric(8,2)
+		wind_speed numeric(8,2),
+		bullet_demolition_range numeric(8,2)
 	);
 
 	CREATE TYPE meteo_average_type AS (
@@ -246,7 +258,10 @@ END;
 
 raise notice 'Расчетные структуры сформированы';
 
--- Создание связей
+/*
+ 4. Создание связей
+ ==========================================
+ */
 begin
 	ALTER TABLE public.measurement_batches
 		ADD CONSTRAINT employee_id_constraint
@@ -268,9 +283,13 @@ begin
 		FOREIGN KEY (military_rank_id)
 		REFERENCES public.military_ranks(id);
 end;
+
 raise notice 'Связи сформированы';
 
--- Создание функций
+/*
+ 5. Создание расчетных и вспомогательных функций
+ ==========================================
+ */
 begin
 -- Функция для рассчета интерполяции температур
 CREATE FUNCTION "CalculateInterpolation"(
@@ -286,21 +305,21 @@ DECLARE
 BEGIN
     -- Находим ближайшие точки для интерполяции
     SELECT 
-        t1.delta_t, t1.temperature,
-        t2.delta_t, t2.temperature
+        t1.correction, t1.temperature,
+        t2.correction, t2.temperature
     INTO 
         temp_interpolation.delta_high, temp_interpolation.temp_high,
         temp_interpolation.delta_low, temp_interpolation.temp_low
     FROM
     (
-        SELECT delta_t, temperature FROM temperature_correction
+        SELECT correction, temperature FROM temperature_correction
         WHERE temperature >= input_temp
         ORDER BY temperature
         LIMIT 1
     ) AS t1
     LEFT JOIN 
     (
-        SELECT delta_t, temperature FROM temperature_correction
+        SELECT correction, temperature FROM temperature_correction
         WHERE temperature <= input_temp
         ORDER BY temperature DESC
         LIMIT 1
