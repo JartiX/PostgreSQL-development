@@ -19,7 +19,7 @@ def connect_db():
 
 def get_temperature_data(conn):
     with conn.cursor() as cur:
-        cur.execute("SELECT temperature, delta_t FROM temperature_correction ORDER BY temperature ASC")
+        cur.execute("SELECT temperature, correction FROM temperature_correction ORDER BY temperature ASC")
         temperature_data = cur.fetchall()
     return temperature_data
 
