@@ -668,40 +668,32 @@ END$$;
  */
 
 -- ФИО, должность, кол-во измерений, количество некорректных параметров
-SELECT 
-    t3.name AS employee_name, 
-    t4.description AS military_rank,
-    COUNT(*) AS total_measurements,
-    SUM(
-        (vp.height IS NULL)::int +
-        (vp.temperature IS NULL)::int +
-        (vp.pressure IS NULL)::int +
-        (vp.wind_direction IS NULL)::int +
-        (vp.wind_speed IS NULL)::int
-    ) AS incorrect_params_count
-FROM public.measurement_batches AS t1
-INNER JOIN public.measurement_input_params AS t2 
-    ON t1.measurement_input_param_id = t2.id
-INNER JOIN public.employees AS t3 
-    ON t3.id = t1.employee_id
-INNER JOIN public.military_ranks AS t4
-    ON t4.id = t3.military_rank_id
-INNER JOIN (
-    SELECT 
-        id,
-        (public."validateMeasurementParams"(
-            measurement_type_id, 
-            height, 
-            temperature, 
-            pressure, 
-            wind_direction, 
-            wind_speed
-        )).*
-    FROM public.measurement_input_params
-) AS vp
-    ON vp.id = t2.id
-GROUP BY t3.name, t4.description
-ORDER BY incorrect_params_count;
+SELECT *
+FROM (
+	SELECT 
+		emp.name AS employee_name, 
+		mr.description AS military_rank,
+		COUNT(mb.id) AS total_measurements,
+		SUM(vp.incorrect_params_count) AS incorrect_params_count
+	FROM public.employees AS emp
+	INNER JOIN public.military_ranks AS mr
+		ON mr.id = emp.military_rank_id
+	INNER JOIN public.measurement_batches AS mb
+		ON mb.employee_id = emp.id
+	INNER JOIN (
+		SELECT 
+			mip.id,
+			((mip.height IS NULL)::int + 
+			(mip.temperature IS NULL)::int + 
+			(mip.pressure IS NULL)::int + 
+			(mip.wind_direction IS NULL)::int + 
+			(mip.wind_speed IS NULL)::int) AS incorrect_params_count
+		FROM public.measurement_input_params AS mip
+	) AS vp
+		ON vp.id = mb.measurement_input_param_id
+	GROUP BY emp.name, mr.description
+) AS agg_data
+ORDER BY agg_data.incorrect_params_count;
 
 DO $$
 BEGIN
