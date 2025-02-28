@@ -30,6 +30,8 @@ BEGIN
 	drop table if exists public.temperature_correction;
 	drop table if exists public.constant_table;
 	drop table if exists public.meteo_average;
+	drop table if exists public.calc_temperature_afr;
+	drop table if exists public.temperature_afr_header;
 
 	-- Нумераторы
 	drop sequence if exists public.measurement_input_params_seq;
@@ -37,6 +39,7 @@ BEGIN
 	drop sequence if exists public.employees_seq;
 	drop sequence if exists public.military_ranks_seq;
 	drop sequence if exists public.measurement_types_seq;
+	drop sequence if exists public.calc_temperature_afr_seq;
 
 	-- Типы
 	drop type if exists interpolation_type cascade;
@@ -50,6 +53,9 @@ BEGIN
 	DROP FUNCTION IF EXISTS "getFormattedDate";
 	DROP FUNCTION IF EXISTS "formatHeight";
 	DROP FUNCTION IF EXISTS "CalculateMeteoAverage";
+
+	-- Процедуры
+	DROP PROCEDURE IF EXISTS interpolate_temperature;
 END;
 raise notice 'Удаление старых данных выполнено успешно';
 
@@ -231,6 +237,71 @@ raise notice 'Создание общих справочников и напол
 		('bullets_drift_low', '0'),
 		('bullets_drift_high', '150');
 
+	create table temperature_afr_header(
+		is_positive boolean,
+		temperature integer[]
+	);
+
+	insert into temperature_afr_header(is_positive, temperature)
+		values 
+			(true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50]),
+			(false, array[-1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -20, -30, -40, -50]);
+
+	-- Таблица для рассчета отклонения СКО температуры
+	create sequence calc_temperature_afr_seq;
+	create table calc_temperature_afr(
+		id integer not null primary key default nextval('calc_temperature_afr_seq'),
+		measurement_type_id integer not null,
+		height integer not null,
+		is_positive boolean not null,
+		data integer[] not null
+	);
+
+	insert into public.calc_temperature_afr(
+		height,
+		measurement_type_id,
+		is_positive,
+		data
+	)
+	values
+		(200, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(200, 2, false, array[-1, -2, -3, -4, -5, -6, -7, -8, -8, -9, -20, -29, -39, -49]),
+		(400, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(400, 2, false, array[-1, -2, -3, -4, -5, -6, -6, -7, -8, -9, -19, -29, -38, -48]),
+		(800, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(800, 2, false, array[-1, -2, -3, -4, -5, -6, -6, -7, -7, -8, -18, -28, -37, -46]),
+		(1200, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(1200, 2, false, array[-1, -2, -3, -4, -4, -5, -5, -6, -7, -8, -17, -26, -35, -44]),
+		(1600, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(1600, 2, false, array[-1, -2, -3, -3, -4, -4, -5, -6, -7, -7, -17, -25, -34, -42]),
+		(2000, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(2000, 2, false, array[-1, -2, -3, -3, -4, -4, -5, -6, -6, -7, -16, -24, -32, -40]),
+		(2400, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(2400, 2, false, array[-1, -2, -2, -3, -4, -4, -5, -5, -6, -7, -15, -23, -31, -38]),
+		(3000, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(3000, 2, false, array[-1, -2, -2, -3, -4, -4, -4, -5, -5, -6, -15, -22, -30, -37]),
+		(4000, 2, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(4000, 2, false, array[-1, -2, -2, -3, -4, -4, -4, -4, -5, -6, -14, -20, -27, -34]),
+
+		(200, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(200, 1, false, array[-1, -2, -3, -4, -5, -6, -7, -8, -8, -9, -20, -29, -39, -49]),
+		(400, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(400, 1, false, array[-1, -2, -3, -4, -5, -6, -6, -7, -8, -9, -19, -29, -38, -48]),
+		(800, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(800, 1, false, array[-1, -2, -3, -4, -5, -6, -6, -7, -7, -8, -18, -28, -37, -46]),
+		(1200, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(1200, 1, false, array[-1, -2, -3, -4, -4, -5, -5, -6, -7, -8, -17, -26, -35, -44]),
+		(1600, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(1600, 1, false, array[-1, -2, -3, -3, -4, -4, -5, -6, -7, -7, -17, -25, -34, -42]),
+		(2000, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(2000, 1, false, array[-1, -2, -3, -3, -4, -4, -5, -6, -6, -7, -16, -24, -32, -40]),
+		(2400, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(2400, 1, false, array[-1, -2, -2, -3, -4, -4, -5, -5, -6, -7, -15, -23, -31, -38]),
+		(3000, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(3000, 1, false, array[-1, -2, -2, -3, -4, -4, -4, -5, -5, -6, -15, -22, -30, -37]),
+		(4000, 1, true, array[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30]),
+		(4000, 1, false, array[-1, -2, -2, -3, -4, -4, -4, -4, -5, -6, -14, -20, -27, -34]);
+
 	-- Тип данных для хранения точек интерполяции
 	CREATE TYPE interpolation_type AS (
 		temp_low float,
@@ -246,7 +317,9 @@ raise notice 'Создание общих справочников и напол
 		pressure numeric(8,2),
 		wind_direction numeric(8,2),
 		wind_speed numeric(8,2),
-		bullet_demolition_range numeric(8,2)
+		bullet_demolition_range numeric(8,2),
+		incorrect_params integer,
+		error_message character varying(255)
 	);
 
 	CREATE TYPE meteo_average_type AS (
@@ -456,8 +529,8 @@ CREATE FUNCTION "validateMeasurementParams"(
     p_wind_direction numeric(8,2),
     p_wind_speed numeric(8,2)
 ) 
-	RETURNS measurement_input_params_type
-	LANGUAGE 'plpgsql'
+RETURNS measurement_input_params_type
+LANGUAGE 'plpgsql'
 AS $BODY$
 DECLARE
     v_result measurement_input_params_type;
@@ -469,104 +542,170 @@ DECLARE
     v_wind_direction_high numeric;
     v_wind_speed_low numeric;
     v_wind_speed_high numeric;
+    v_error_message text := '';
+    v_incorrect_params integer := 0;
 BEGIN
-    -- Проверка на соответствие типу данных
-    IF pg_typeof(p_measurement_type_id) <> 'integer'::regtype THEN
-        RAISE EXCEPTION 'p_measurement_type_id должен быть числовым';
-    END IF;
-    IF pg_typeof(p_height) <> 'numeric'::regtype THEN
-        RAISE EXCEPTION 'p_height должен быть числовым';
-    END IF;
-
-    IF pg_typeof(p_temperature) <> 'numeric'::regtype THEN
-        RAISE EXCEPTION 'p_temperature должен быть числовым';
-    END IF;
-
-    IF pg_typeof(p_pressure) <> 'numeric'::regtype THEN
-        RAISE EXCEPTION 'p_pressure должен быть числовым';
-    END IF;
-
-    IF pg_typeof(p_wind_direction) <> 'numeric'::regtype THEN
-        RAISE EXCEPTION 'p_wind_direction должен быть числовым';
-    END IF;
-
-    IF pg_typeof(p_wind_speed) <> 'numeric'::regtype THEN
-        RAISE EXCEPTION 'p_wind_speed должен быть числовым';
-    END IF;
-
     -- Получаем граничные значения из таблицы constant_table
-    SELECT 
-        value::numeric INTO v_temp_low
-    FROM constant_table
-    WHERE name = 'temp_low';
+    SELECT value::numeric INTO v_temp_low FROM constant_table WHERE name = 'temp_low';
+    SELECT value::numeric INTO v_temp_high FROM constant_table WHERE name = 'temp_high';
+    SELECT value::numeric INTO v_pressure_low FROM constant_table WHERE name = 'pressure_low';
+    SELECT value::numeric INTO v_pressure_high FROM constant_table WHERE name = 'pressure_high';
+    SELECT value::numeric INTO v_wind_direction_low FROM constant_table WHERE name = 'wind_direction_low';
+    SELECT value::numeric INTO v_wind_direction_high FROM constant_table WHERE name = 'wind_direction_high';
+    SELECT value::numeric INTO v_wind_speed_low FROM constant_table WHERE name = 'wind_speed_low';
+    SELECT value::numeric INTO v_wind_speed_high FROM constant_table WHERE name = 'wind_speed_high';
 
-    SELECT 
-        value::numeric INTO v_temp_high
-    FROM constant_table
-    WHERE name = 'temp_high';
-
-    SELECT 
-        value::numeric INTO v_pressure_low
-    FROM constant_table
-    WHERE name = 'pressure_low';
-
-    SELECT 
-        value::numeric INTO v_pressure_high
-    FROM constant_table
-    WHERE name = 'pressure_high';
-
-    SELECT 
-        value::numeric INTO v_wind_direction_low
-    FROM constant_table
-    WHERE name = 'wind_direction_low';
-
-    SELECT 
-        value::numeric INTO v_wind_direction_high
-    FROM constant_table
-    WHERE name = 'wind_direction_high';
-
-    SELECT 
-        value::numeric INTO v_wind_speed_low
-    FROM constant_table
-    WHERE name = 'wind_speed_low';
-
-    SELECT 
-        value::numeric INTO v_wind_speed_high
-    FROM constant_table
-    WHERE name = 'wind_speed_high';
-
+    -- Валидация параметров
     IF p_measurement_type_id IS NULL OR p_measurement_type_id < 1 THEN
-        RAISE EXCEPTION 'measurement_type_id должен быть позитивным целым';
+        v_error_message := v_error_message || 'measurement_type_id должен быть позитивным целым. ';
+        v_incorrect_params := v_incorrect_params + 1;
+		p_measurement_type_id := NULL;
     END IF;
 
     IF p_temperature IS NULL OR p_temperature < v_temp_low OR p_temperature > v_temp_high THEN
-        RAISE EXCEPTION 'temperature должен быть в диапазоне (%, %)', v_temp_low, v_temp_high;
+        v_error_message := v_error_message || format('temperature должен быть в диапазоне (%s, %s). ', v_temp_low, v_temp_high);
+        v_incorrect_params := v_incorrect_params + 1;
+		p_temperature := NULL;
     END IF;
 
     IF p_pressure IS NULL OR p_pressure < v_pressure_low OR p_pressure > v_pressure_high THEN
-        RAISE EXCEPTION 'pressure должен быть в диапазоне (%, %)', v_pressure_low, v_pressure_high;
+        v_error_message := v_error_message || format('pressure должен быть в диапазоне (%s, %s). ', v_pressure_low, v_pressure_high);
+        v_incorrect_params := v_incorrect_params + 1;
+		p_pressure := NULL;
     END IF;
 
     IF p_wind_direction IS NULL OR p_wind_direction < v_wind_direction_low OR p_wind_direction > v_wind_direction_high THEN
-        RAISE EXCEPTION 'wind_direction должен быть в диапазоне (%, %)', v_wind_direction_low, v_wind_direction_high;
+        v_error_message := v_error_message || format('wind_direction должен быть в диапазоне (%s, %s). ', v_wind_direction_low, v_wind_direction_high);
+        v_incorrect_params := v_incorrect_params + 1;
+		p_wind_direction := NULL;
     END IF;
 
     IF p_wind_speed IS NULL OR p_wind_speed < v_wind_speed_low OR p_wind_speed > v_wind_speed_high THEN
-        RAISE EXCEPTION 'wind_speed должен быть в диапазоне (%, %)', v_wind_speed_low, v_wind_speed_high;
+        v_error_message := v_error_message || format('wind_speed должен быть в диапазоне (%s, %s). ', v_wind_speed_low, v_wind_speed_high);
+        v_incorrect_params := v_incorrect_params + 1;
+		p_wind_speed := NULL;
     END IF;
 
+    -- Заполняем структуру результата
     v_result.measurement_type_id := p_measurement_type_id;
     v_result.height := p_height;
     v_result.temperature := p_temperature;
     v_result.pressure := p_pressure;
     v_result.wind_direction := p_wind_direction;
     v_result.wind_speed := p_wind_speed;
+    v_result.incorrect_params := v_incorrect_params;
+    v_result.error_message := LEFT(v_error_message, 255);
 
     RETURN v_result;
 END;
 $BODY$;
 end;
 
-raise notice 'Структура сформирована успешно';
+/*
+ 6. Создание процедур
+ ==========================================
+ */
 
+begin
+CREATE PROCEDURE interpolate_temperature(
+    p_temperature NUMERIC(8,2),
+    measurement_id INTEGER,
+    OUT v_result NUMERIC[]
+) 
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    v_data NUMERIC[][];
+    v_data_head NUMERIC[];
+    v_heights INTEGER[];
+    i INTEGER;
+    j INTEGER;
+    v_interp_value NUMERIC(8,2);
+    is_pos BOOLEAN;
+BEGIN
+    is_pos := CASE WHEN p_temperature > 0 THEN TRUE ELSE FALSE END;
+    
+    SELECT ARRAY(SELECT data FROM calc_temperature_afr
+                 WHERE measurement_type_id = measurement_id AND is_positive = is_pos)
+    INTO v_data;
+    SELECT ARRAY(SELECT height FROM calc_temperature_afr
+                 WHERE measurement_type_id = measurement_id AND is_positive = is_pos)
+    INTO v_heights;
+
+    SELECT temperature
+    FROM temperature_afr_header
+    WHERE is_positive = is_pos 
+    INTO v_data_head;
+
+    v_result := ARRAY[]::NUMERIC[];
+
+    FOR i IN 1..array_length(v_heights, 1) LOOP
+        FOR j IN 1..array_length(v_data, 2) - 1 LOOP
+            IF v_data_head[j] = p_temperature THEN
+                v_result := array_append(v_result, v_data[i][j]);
+                EXIT;
+            ELSIF v_data_head[j+1] = p_temperature THEN
+                v_result := array_append(v_result, v_data[i][j+1]);
+                EXIT;
+            ELSIF abs(v_data_head[j]) <= abs(p_temperature) AND abs(v_data_head[j+1]) >= abs(p_temperature) THEN
+                v_interp_value := v_data[i][j] + (v_data[i][j+1] - v_data[i][j]) * 
+                                  ((p_temperature - v_data_head[j]) / (v_data_head[j+1] - v_data_head[j])); 
+                v_result := array_append(v_result, v_interp_value);
+                EXIT;
+            END IF;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+end;
+
+raise notice 'Структура сформирована успешно';
+END$$;
+
+/*
+ 7. Создание отчётов
+ ==========================================
+ */
+
+-- ФИО, должность, кол-во измерений, количество некорректных параметров
+SELECT *
+FROM (
+	SELECT 
+		emp.name AS employee_name, 
+		mr.description AS military_rank,
+		COUNT(mb.id) AS total_measurements,
+		SUM(vp.incorrect_params_count) AS incorrect_params_count
+	FROM public.employees AS emp
+	INNER JOIN public.military_ranks AS mr
+		ON mr.id = emp.military_rank_id
+	INNER JOIN public.measurement_batches AS mb
+		ON mb.employee_id = emp.id
+	INNER JOIN (
+		SELECT 
+			mip.id,
+			((mip.height IS NULL)::int + 
+			(mip.temperature IS NULL)::int + 
+			(mip.pressure IS NULL)::int + 
+			(mip.wind_direction IS NULL)::int + 
+			(mip.wind_speed IS NULL)::int) AS incorrect_params_count
+		FROM public.measurement_input_params AS mip
+	) AS vp
+		ON vp.id = mb.measurement_input_param_id
+	GROUP BY emp.name, mr.description
+) AS agg_data
+ORDER BY agg_data.incorrect_params_count;
+
+DO $$
+BEGIN
+
+raise notice 'Отчеты сформированы успешно';
+
+END $$;
+
+DO $$
+DECLARE
+    result NUMERIC[];
+BEGIN
+    CALL interpolate_temperature(-20, 2, result);
+    RAISE NOTICE 'Interpolated Result: %', result;
 END $$;
